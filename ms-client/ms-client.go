@@ -26,7 +26,7 @@ func main() {
 	clientDomain := flag.String("client", "ms-client", "Client domain name")
 	serviceDomain := flag.String("D", "", "Service domain name")
 	serviceOper := flag.String("O", "", "Service operation name")
-	serviceTTL := flag.Int("ttl", 15000, "Service timeout (milliseconds)")
+	serviceTTL := flag.Int("ttl", 2000, "Service timeout (milliseconds: must be >= 100)")
 	serviceReqJSON := flag.String("R", "{}", "Service request data on command line")
 	serviceReqFile := flag.String("F", "", "Service request file to load")
 	//msProt := flag.String("prot", "nats", "Messaging protocol (nats|redis)")
@@ -38,7 +38,7 @@ func main() {
 	if len(*serviceOper) == 0 {
 		panic("option for service operarion -O ... is required")
 	}
-	if *serviceTTL < 1000 {
+	if *serviceTTL < 100 {
 		panic(errors.Errorf("service ttl %d should be >= 1000 (ms)", serviceTTL))
 	}
 	if len(*clientDomain) == 0 {
@@ -86,7 +86,8 @@ func main() {
 			Domain:    *serviceDomain,
 			Operation: *serviceOper,
 		},
-		time.Minute, reqData)
+		time.Millisecond*time.Duration(*serviceTTL),
+		reqData)
 	if err != nil {
 		panic(fmt.Sprintf("failed to do request: %+v", err))
 	}

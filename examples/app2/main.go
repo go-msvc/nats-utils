@@ -12,7 +12,7 @@ import (
 
 func main() {
 	svc := ms.New(
-		ms.WithOper("oper1", oper1))
+		ms.WithOper("oper2", oper2))
 	if err := config.AddSource("file", config.File("./config.json")); err != nil {
 		panic(err)
 	}
@@ -22,19 +22,19 @@ func main() {
 	svc.Serve()
 }
 
-type Oper1Request struct {
+type Oper2Request struct {
 	Name string `json:"name"`
 }
 
-type Oper1Response struct {
+type Oper2Response struct {
 	Message string `json:"message"`
 }
 
-func oper1(ctx context.Context, req Oper1Request) (*Oper1Response, error) {
+func oper2(ctx context.Context, req Oper2Request) (*Oper2Response, error) {
 	if time.Now().Second()%5 < 1 {
-		return nil, errors.Errorf("oper1 sometimes fails")
+		return nil, errors.Errorf("oper2 sometimes fails")
 	}
-	return &Oper1Response{
-		Message: "Hello " + req.Name,
+	return &Oper2Response{
+		Message: "Goodbye " + req.Name,
 	}, nil
 }

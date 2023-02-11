@@ -2,7 +2,7 @@
     "ms":{
         "server":{
             "nats":{
-                "domain":"app1"
+                "domain":"app2"
             }
         }
     }

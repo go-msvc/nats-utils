@@ -42,7 +42,7 @@ func connect(c Config) (*connection, error) {
 
 		var options []nats.Option
 		options = append(options, nats.Name(c.Domain))
-		options = append(options, nats.Timeout(c.Timeout.Duration()))
+		options = append(options, nats.Timeout(c.ConnectTimeout.Duration()))
 		options = append(options, nats.MaxReconnects(c.MaxReconnects))
 		options = append(options, nats.ReconnectWait(c.ReconnectWait.Duration()))
 		options = append(options, nats.ReconnectJitter(c.ReconnectJitter.Duration(), c.ReconnectJitterTls.Duration()))

@@ -16,9 +16,9 @@ var log = logger.New().WithLevel(logger.LevelDebug)
 func init() {
 	config.RegisterConstructor("nats", ServerConfig{
 		Config: Config{
-			Domain:  "test",
-			Url:     "nats://localhost:4222",
-			Timeout: datatype.Duration(time.Second * 2),
+			Domain:         "", //must be configured
+			Url:            "nats://localhost:4222",
+			ConnectTimeout: datatype.Duration(time.Second * 2),
 		},
 	})
 }
@@ -27,7 +27,7 @@ func init() {
 type Config struct {
 	Domain             string            `json:"domain" doc:"NATS client name that will be used for subscription on '<domain>.*', e.g. use 'ussd'"`
 	Url                string            `json:"url" doc:"NATS connection URL, defaults to 'nats://127.0.0.1:4222'"`
-	Timeout            datatype.Duration `json:"timeout"`
+	ConnectTimeout     datatype.Duration `json:"connect_timeout"`
 	MaxReconnects      int               `json:"max_reconnects"`
 	ReconnectWait      datatype.Duration `json:"reconnect_wait"`
 	ReconnectJitter    datatype.Duration `json:"reconnect_jitter"`
