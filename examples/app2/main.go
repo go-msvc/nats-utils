@@ -7,6 +7,7 @@ import (
 	"github.com/go-msvc/config"
 	"github.com/go-msvc/errors"
 	_ "github.com/go-msvc/nats-utils"
+	"github.com/go-msvc/nats-utils/examples/app2/two"
 	"github.com/go-msvc/utils/ms"
 )
 
@@ -22,19 +23,13 @@ func main() {
 	svc.Serve()
 }
 
-type Oper2Request struct {
-	Name string `json:"name"`
-}
-
-type Oper2Response struct {
-	Message string `json:"message"`
-}
-
-func oper2(ctx context.Context, req Oper2Request) (*Oper2Response, error) {
+// req/res structs are in sub dir ./two so they can be
+// imported by the client
+func oper2(ctx context.Context, req two.Oper2Request) (*two.Oper2Response, error) {
 	if time.Now().Second()%5 < 1 {
 		return nil, errors.Errorf("oper2 sometimes fails")
 	}
-	return &Oper2Response{
+	return &two.Oper2Response{
 		Message: "Goodbye " + req.Name,
 	}, nil
 }

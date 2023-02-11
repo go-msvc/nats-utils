@@ -31,6 +31,7 @@ type server struct {
 	replySubscription  *nats.Subscription
 	replyChannelsLock  sync.Mutex
 	replyChannels      map[string]chan received
+	client             ms.Client
 }
 
 func (s *server) Serve(svc ms.MicroService) error {
@@ -52,13 +53,31 @@ func (s *server) Serve(svc ms.MicroService) error {
 		return errors.Wrapf(err, "failed to subscribe to reply subject")
 	}
 
+	//creat a client that can be used from contexts
+	clientConfig := ClientConfig{
+		Config: Config{
+			Domain: s.config.Domain,
+		},
+	}
+	log.Debugf("client config: %+v", clientConfig)
+	if err := clientConfig.Validate(); err != nil {
+		panic(fmt.Sprintf("client config: %+v", err))
+	}
+	s.client, err = clientConfig.Create()
+	if err != nil {
+		panic(fmt.Sprintf("failed to create client: %+v", err))
+	}
+
 	//todo: graceful shutdown
 	log.Debugf("NATS service(%s) running...", s.config.Domain)
 	x := make(chan bool)
 	<-x
 	log.Debugf("NATS service(%s) stopped...", s.config.Domain)
 	return nil
-}
+} //server.Serve()
+
+//context value identifiers
+type CtxClient struct{}
 
 func (s *server) handleRequest(msg received) {
 	log.Debugf("Received %s", string(msg.data))
@@ -177,6 +196,15 @@ func (s *server) handleRequest(msg received) {
 
 	//has a valid request
 	ctx := context.Background()
+	ctx = context.WithValue(ctx, ms.CtxID{}, request.ContextID) //may be same as other context, but request ID will/must be unique
+	ctx = context.WithValue(ctx, CtxClient{}, s.client)         //todo: client wrapper with context id and ability to determine remaining time?
+
+	//todo: ctx logger - with sync and discard/log and level controls to filter how much is written
+
+	//todo: auditing
+
+	//todo: consider adding .1, .2, ... to each outgoing context ID or request ID when making client calls, so can still match but unique
+	//think well over purpose of having both or just one combined field...
 
 	//call the operation handler function
 	responseData, err = o.Handle(ctx, reqValuePtr.Elem().Interface())

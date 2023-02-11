@@ -3,6 +3,7 @@ package nats
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"sync"
 	"time"
 
@@ -101,6 +102,7 @@ func (c *client) Sync(
 	serviceAddress ms.Address,
 	ttl time.Duration,
 	req interface{},
+	resTmpl interface{},
 ) (
 	res interface{},
 	err error,
@@ -110,6 +112,7 @@ func (c *client) Sync(
 	if !ok || contextID == "" {
 		contextID = requestID
 	}
+	log.Debugf("Sync config: %+v ctx=%s req=%s", c.config, contextID, requestID)
 
 	//make and register the chan on request id with the client before sending
 	//to ensure it exists when response is received
@@ -130,6 +133,9 @@ func (c *client) Sync(
 		TTL:  datatype.Duration(ttl),
 		Data: req,
 	}
+	log.Debugf("sending request: %+v", request)
+	log.Debugf("sending request.client: %+v", request.Client)
+	log.Debugf("sending request.service: %+v", request.Service)
 
 	//now send
 	if err := c.conn.sendRequest(request); err != nil {
@@ -144,17 +150,35 @@ func (c *client) Sync(
 		if len(response.Errors) > 0 {
 			return nil, ms.NewError(response.Errors...) //failed
 		}
+		if resTmpl != nil {
+			resType := reflect.TypeOf(resTmpl)
+			if resType.Kind() == reflect.Ptr {
+				resType = resType.Elem()
+			}
+			//todo: make message struct with this as data then parse JSON only once!
+			resPtrValue := reflect.New(resType)
+			resJsonData, _ := json.Marshal(response.Data)
+			if err := json.Unmarshal(resJsonData, resPtrValue.Interface()); err != nil {
+				return nil, errors.Wrapf(err, "cannot parse response data into %v", resType)
+			}
+			if validator, ok := resPtrValue.Interface().(ms.Validator); ok {
+				if err := validator.Validate(); err != nil {
+					return nil, errors.Wrapf(err, "invalid response data")
+				}
+			}
+			return resPtrValue.Elem().Interface(), nil
+		}
 		return response.Data, nil //success
 	case <-time.After(ttl):
 	}
 	log.Errorf("response timeout")
 	return nil, errors.Errorf("response timeout")
-} //Sync()
+} //client.Sync()
 
 func (c *client) ASync(addr ms.Address, req interface{}) (err error) {
 	return errors.Errorf("NYI")
-}
+} //client.ASync()
 
 func (c *client) Send(addr ms.Address, ttl time.Duration, req interface{}) (err error) {
 	return errors.Errorf("NYI")
-}
+} //client.Send()

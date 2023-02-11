@@ -12,12 +12,6 @@ import (
 	"github.com/go-msvc/logger"
 	"github.com/go-msvc/nats-utils"
 	"github.com/go-msvc/utils/ms"
-	// "bitbucket.org/vservices/utils/v4/env"
-	// "bitbucket.org/vservices/utils/v4/errors"
-	// "bitbucket.org/vservices/utils/v4/integration"
-	// "bitbucket.org/vservices/utils/v4/logger"
-	// "bitbucket.org/vservices/utils/v4/ms"
-	// "github.com/spf13/viper"
 )
 
 var log = logger.New().WithLevel(logger.LevelDebug)
@@ -29,7 +23,6 @@ func main() {
 	serviceTTL := flag.Int("ttl", 2000, "Service timeout (milliseconds: must be >= 100)")
 	serviceReqJSON := flag.String("R", "{}", "Service request data on command line")
 	serviceReqFile := flag.String("F", "", "Service request file to load")
-	//msProt := flag.String("prot", "nats", "Messaging protocol (nats|redis)")
 	flag.Parse()
 
 	if len(*serviceDomain) == 0 {
@@ -87,7 +80,8 @@ func main() {
 			Operation: *serviceOper,
 		},
 		time.Millisecond*time.Duration(*serviceTTL),
-		reqData)
+		reqData,
+		nil)
 	if err != nil {
 		panic(fmt.Sprintf("failed to do request: %+v", err))
 	}
