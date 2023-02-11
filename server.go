@@ -6,15 +6,22 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
-	"time"
 
 	"github.com/go-msvc/errors"
-	"github.com/go-msvc/logger"
 	"github.com/go-msvc/utils/ms"
 	"github.com/nats-io/nats.go"
 )
 
-var log = logger.New()
+type ServerConfig struct {
+	Config
+}
+
+func (c ServerConfig) Create() (ms.Server, error) {
+	return &server{
+		config: c,
+		svc:    nil, //defined in Serve()
+	}, nil
+}
 
 type server struct {
 	config             ServerConfig
@@ -29,7 +36,7 @@ type server struct {
 func (s *server) Serve(svc ms.MicroService) error {
 	s.svc = svc
 	s.replyChannels = make(map[string]chan received, 100)
-	s.replySubjectPrefix = nats.NewInbox() + "."
+	s.replySubjectPrefix = nats.NewInbox()
 
 	var err error
 	s.conn, err = connect(s.config.Config)
@@ -37,11 +44,11 @@ func (s *server) Serve(svc ms.MicroService) error {
 		return errors.Wrapf(err, "server failed to connect to nats")
 	}
 
-	if _, err := s.conn.subscribe(s.config.Domain, false /*, h.handleRequest*/, s.handleRequest); err != nil {
+	if _, err := s.conn.subscribe(s.config.Domain+".request", false /*, h.handleRequest*/, s.handleRequest); err != nil {
 		return errors.Wrapf(err, "failed to subscribe to request subject")
 	}
 
-	if s.replySubscription, err = s.conn.subscribe(s.replySubjectPrefix+"*", false, s.handleReply); err != nil {
+	if s.replySubscription, err = s.conn.subscribe(s.replySubjectPrefix+".response", false, s.handleReply); err != nil {
 		return errors.Wrapf(err, "failed to subscribe to reply subject")
 	}
 
@@ -56,78 +63,126 @@ func (s *server) Serve(svc ms.MicroService) error {
 func (s *server) handleRequest(msg received) {
 	log.Debugf("Received %s", string(msg.data))
 
-	var req Request
+	var request Request
 	var err error
-	var res interface{}
+	var responseData interface{}
 	defer func() {
-		resMessage := Response{
-			Header: Header{
-				Timestamp: time.Now(),
-				ContextID: req.ContextID,
-				RequestID: req.RequestID,
-			},
-			Data: res,
-		}
 		if err != nil {
-			log.Errorf("%+v", err)
-			resMessage.Errors = []ms.Error{
-				{
-					Code:    "failed", //todo fmt.Sprintf("%v", err.Code()), //todo: get code & code stack from err
-					Details: fmt.Sprintf("%+s", err),
-					Source:  fmt.Sprintf("%+v", err),
-				},
+			//response is error
+			log.Errorf("Error response: %+v", err)
+		} else {
+			log.Debugf("Success response type: %T", responseData)
+		}
+
+		//reply only if has reply topic, determined as follows:
+		// - sync request where client waits for a response, specifies NATS msg.replySubject
+		//		and should only be used when sending client process must get the response
+		//		and not when any other instance of the same process can process the response
+		//		(the latter is preferred for resilience)
+		// - async requests does not keep the thread open and the reply is sent
+		//		to NATS topic "<request.client.domain>.response"
+		//		this can still be sent to the same process if the domain includes a unique
+		//		instance id.
+		// - the response can be sent on to any other service by setting request.forward
+		//		(when set, request.client will not be used for sending the response)
+		// - to fire-and-forget, set request.no_response=true and do not send NATS msg.replySubject
+		if request.NoResponse {
+			log.Debugf("response silenced")
+		} else {
+			replySubject := msg.replySubject //when set, overrides any other logic from the request
+			if replySubject == "" {
+				if request.Forward != nil {
+					replySubject = request.Forward.Domain + ".response"
+				} else {
+					if request.Client != nil {
+						replySubject = request.Client.Domain + ".response"
+					}
+				}
 			}
-		}
-		if msg.replySubject != "" {
-			log.Debugf("reply to %s", msg.replySubject)
-			jsonRes, _ := json.Marshal(resMessage)
-			s.conn.Send(nil, msg.replySubject, jsonRes)
-		}
+
+			if replySubject == "" {
+				log.Debugf("no reply subject - not sending a reply")
+			} else {
+				response := Response{
+					Header: request.Header,
+				}
+
+				if err != nil {
+					response.Errors = []ms.Error{
+						{
+							Code:    "failed", //todo fmt.Sprintf("%v", err.Code()), //todo: get code & code stack from err
+							Details: fmt.Sprintf("%+s", err),
+							Source:  fmt.Sprintf("%+v", err),
+						},
+					}
+					//todo: support for full error stack and append to called service errors...
+				} else {
+					response.Data = responseData
+				}
+
+				jsonRes, _ := json.Marshal(response)
+				log.Debugf("reply to %s: %s", replySubject, string(jsonRes))
+				if err := s.conn.send(nil, replySubject, jsonRes); err != nil {
+					log.Errorf("failed to reply to %s: %+v", replySubject, err)
+				} else {
+					log.Debugf("replied successfully to %s: %s", replySubject, string(jsonRes))
+				}
+			} //if has reply subject
+		} //if response not silenced
 	}()
 
-	if err = json.Unmarshal(msg.data, &req); err != nil {
-		err = errors.Wrapf(err, "cannot unmarshal JSON into %T", string(msg.data), req)
+	if err = json.Unmarshal(msg.data, &request); err != nil {
+		err = errors.Wrapf(err, "cannot unmarshal JSON into %T", string(msg.data), request)
 		return
 	}
 
-	log.Debugf("RECV: %+v", req)
+	log.Debugf("RECV: %+v", request)
+	if err = request.Validate(); err != nil {
+		err = errors.Wrapf(err, "invalid request message")
+		return
+	}
 
 	//determine operation name from provider.name="/<domain>/<operName>"
-	o, ok := s.svc.Oper(req.Service.Operation)
+	o, ok := s.svc.Oper(request.Service.Operation)
 	if !ok {
-		err = errors.Errorf("unknown operName(%+v)", req.Service)
+		err = errors.Errorf("unknown operName(%+v)", request.Service)
 		return
 	}
 
 	var reqValuePtr reflect.Value
 	if o.ReqType() != nil {
-		if req.Data == nil {
-			err = errors.Errorf("missing request data")
+		if request.Data == nil {
+			err = errors.Errorf("missing request data when expecting %v", o.ReqType())
 			return
 		}
 		reqValuePtr = reflect.New(o.ReqType())
-		jsonRequest, _ := json.Marshal(req.Data)
+		jsonRequest, err := json.Marshal(request.Data)
+		if err != nil {
+			err = errors.Wrapf(err, "failed to marshal request to JSON so that it can be unmarshalled into %v", o.ReqType())
+		}
 		if err = json.Unmarshal(jsonRequest, reqValuePtr.Interface()); err != nil {
 			err = errors.Wrapf(err, "failed to decode request into %v", o.ReqType())
 			return
 		}
-
 		if validator, ok := (reqValuePtr.Interface()).(ms.Validator); ok {
 			if err = validator.Validate(); err != nil {
 				err = errors.Wrapf(err, "invalid %v", o.ReqType())
 				return
 			}
 		}
-		log.Debugf("oper(%s) request: (%T)%+v", req.Service.Operation, reqValuePtr.Elem().Interface(), reqValuePtr.Elem().Interface())
+		log.Debugf("oper(%s) request: (%T)%+v", request.Service.Operation, reqValuePtr.Elem().Interface(), reqValuePtr.Elem().Interface())
 	} else {
-		log.Debugf("oper(%s) no request", req.Service.Operation)
+		log.Debugf("oper(%s) no request", request.Service.Operation)
 	}
 
 	//has a valid request
 	ctx := context.Background()
 
 	//call the operation handler function
-	res, err = o.Handle(ctx, reqValuePtr.Elem().Interface())
+	responseData, err = o.Handle(ctx, reqValuePtr.Elem().Interface())
+	if err != nil {
+		err = errors.Wrapf(err, "oper(%s) handler failed", o.Name())
+	}
 } //handler.HandleRequest()
 
 // handleReply() handles reply messages from nats after we sent with conn.Request()

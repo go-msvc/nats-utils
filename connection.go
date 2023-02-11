@@ -2,6 +2,7 @@ package nats
 
 import (
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"sync"
 
@@ -46,7 +47,7 @@ func connect(c Config) (*connection, error) {
 		options = append(options, nats.ReconnectWait(c.ReconnectWait.Duration()))
 		options = append(options, nats.ReconnectJitter(c.ReconnectJitter.Duration(), c.ReconnectJitterTls.Duration()))
 		options = append(options, nats.ReconnectHandler(func(conn *nats.Conn) {
-			log.Errorf("Reconnecting %+v\n", conn)
+			log.Errorf("Reconnecting to NATS server on conn %+v\n", conn)
 		}))
 		if c.DontRandomize {
 			options = append(options, nats.DontRandomize())
@@ -85,7 +86,7 @@ func (s *connection) subscribe(subject string, broadcast bool, hdlr handlerFunc)
 	var err error
 	if !broadcast {
 		subscription, err = s.conn.QueueSubscribe(
-			subject+".*",
+			subject,
 			fmt.Sprintf("Q.%s", subject),
 			func(msg *nats.Msg) {
 				hdlr(received{subject: msg.Subject, data: msg.Data, replySubject: msg.Reply})
@@ -94,6 +95,7 @@ func (s *connection) subscribe(subject string, broadcast bool, hdlr handlerFunc)
 		if err != nil {
 			return nil, errors.Wrapf(err, "queue subscribe(%s) failed", subject)
 		}
+		log.Debugf("Subscribed to (%s) as Q.%s", subject, subject)
 	} else {
 		subscription, err = s.conn.Subscribe(
 			subject+".*",
@@ -104,19 +106,22 @@ func (s *connection) subscribe(subject string, broadcast bool, hdlr handlerFunc)
 		if err != nil {
 			return nil, errors.Wrapf(err, "subscribe(%s) failed", subject)
 		}
+		log.Debugf("Subscribed to %s", subject+".")
 	}
 	s.subscriptions[subject] = subscription
 	//h.defaultReplyQ = subject + ".reply"
 	return subscription, nil
 } //connection.Subscribe()
 
-// Send() sends a message to Nats on a given subject
-func (c *connection) Send(header map[string]string, subject string, data []byte) error {
+//sends a message to NATS on a given subject
+func (c *connection) send(header map[string]string, subject string, data []byte) error {
 	if c == nil {
 		return errors.Errorf("nil.Send()")
 	}
+
 	sendMsg := nats.NewMsg(subject)
 	sendMsg.Data = []byte(data)
+	//sendMsg.Header.Add()
 	if c.headersSupported {
 		for n, v := range header {
 			sendMsg.Header.Set(n, v)
@@ -126,4 +131,40 @@ func (c *connection) Send(header map[string]string, subject string, data []byte)
 		return errors.Wrap(err, "failed to publish message")
 	}
 	return nil
-} //handler.Send()
+} //connection.Send()
+
+//send a micro-service request message to specified domain
+//replySubject is optional
+func (c *connection) sendRequest(req Request) (err error) {
+	if c == nil {
+		return errors.Errorf("nil.SendRequest()")
+	}
+	if err := req.Validate(); err != nil {
+		return errors.Wrapf(err, "cannot send invalid request")
+	}
+
+	//define the NATS message
+	subject := req.Service.Domain + ".request"
+	log.Debugf("sending to NATS subject(%s)", subject)
+
+	sendMsg := nats.NewMsg(subject)
+	//sendMsg.Reply = replySubject //not setting reply - replies are sent as normal messages
+
+	//optional headers if supported
+	// if n.conn.HeadersSupported() {
+	// 	for k, vs := range opts.headers {
+	// 		for _, v := range vs {
+	// 			sendMsg.Header.Add(k, v)
+	// 		}
+	// 	}
+	// }
+	sendMsg.Data, err = json.Marshal(req)
+	if err != nil {
+		return errors.Wrapf(err, "failed to encode message")
+	}
+
+	if err := c.conn.PublishMsg(sendMsg); err != nil {
+		return errors.Wrapf(err, "failed to publish message on subject %s", subject)
+	}
+	return nil
+} //connection.SendRequest()

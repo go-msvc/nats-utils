@@ -6,10 +6,12 @@ import (
 
 	"github.com/go-msvc/config"
 	"github.com/go-msvc/errors"
+	"github.com/go-msvc/logger"
 	"github.com/go-msvc/nats-utils/datatype"
-	"github.com/go-msvc/utils/ms"
 	"github.com/nats-io/nats.go"
 )
+
+var log = logger.New().WithLevel(logger.LevelDebug)
 
 func init() {
 	config.RegisterConstructor("nats", ServerConfig{
@@ -19,27 +21,6 @@ func init() {
 			Timeout: datatype.Duration(time.Second * 2),
 		},
 	})
-}
-
-type ServerConfig struct {
-	Config
-}
-
-func (c ServerConfig) Create() (ms.Server, error) {
-	return &server{
-		config: c,
-		svc:    nil, //defined in Serve()
-	}, nil
-}
-
-type ClientConfig struct {
-	Config
-}
-
-func (c ClientConfig) Create() (ms.Client, error) {
-	return &client{
-		config: c,
-	}, nil
 }
 
 // common config used by both client and server to connect to the nats service
