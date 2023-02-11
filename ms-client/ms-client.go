@@ -64,28 +64,22 @@ func main() {
 		}
 	}
 
-	log.Debugf("1")
 	clientConfig := nats.ClientConfig{
 		Config: nats.Config{
 			Domain: "ms-client", //todo: use uuid?
 		},
 	}
-	log.Debugf("1")
 	if err := clientConfig.Validate(); err != nil {
 		panic(fmt.Sprintf("client config: %+v", err))
 	}
 
-	log.Debugf("1")
 	client, err := clientConfig.Create()
-	log.Debugf("1")
 	if err != nil {
-		log.Debugf("1")
 		panic(fmt.Sprintf("failed to create client: %+v", err))
 	}
 
 	//ms-client use one id for context, request and own domain, as it does only one request then terminates
 	ctx := context.Background()
-	log.Debugf("1: c=(%T)", client)
 	res, err := client.Sync(
 		ctx,
 		ms.Address{
@@ -93,12 +87,8 @@ func main() {
 			Operation: *serviceOper,
 		},
 		time.Minute, reqData)
-	log.Debugf("1: c=(%T)", client)
 	if err != nil {
-		log.Debugf("1")
 		panic(fmt.Sprintf("failed to do request: %+v", err))
 	}
-
-	log.Debugf("1")
 	log.Debugf("Got res (%T)%+v", res, res)
 } //main()

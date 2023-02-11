@@ -14,6 +14,7 @@ import (
 
 type ClientConfig struct {
 	Config
+	Async bool `json:"async" doc:"Async client can consume responses for requests sent from other similar clients"`
 }
 
 func (clientConfig ClientConfig) Create() (ms.Client, error) {
@@ -27,18 +28,13 @@ func (clientConfig ClientConfig) Create() (ms.Client, error) {
 	var err error
 	log.Debugf("connecting...")
 	newClient.conn, err = connect(clientConfig.Config)
-	log.Debugf("1")
 	if err != nil {
-		log.Debugf("1")
 		return nil, errors.Wrapf(err, "failed to connect")
 	}
 
 	//processing of replies
-	log.Debugf("1")
 	go func(c *client) {
-		log.Debugf("1")
 		for response := range c.replyChan {
-			log.Debugf("1")
 			log.Debugf("received response: %+v", response)
 
 			c.pendingMutex.Lock()
@@ -59,18 +55,22 @@ func (clientConfig ClientConfig) Create() (ms.Client, error) {
 		log.Debugf("Stopped reading responses")
 	}(newClient)
 
-	//client can respond to either or both:
+	//todo: client can respond to either or both:
 	//	- responses for own requests
 	//	- responses to similar clients (for long running processes)
-	...
+	//should be an option
+	//ms-client is only interested in own responses - sync client
+	//workflows would want to get continue much later
 
-	log.Debugf("1")
+	if !newClient.config.Async {
+		newClient.config.Domain += "." + uuid.New().String()
+	}
 	//subscribe to response subject and push them into replyChan for processing above
 	if _, err := newClient.conn.subscribe(
 		newClient.config.Domain+".response",
 		false,
 		func(r received) {
-			log.Debugf("received: %+v", r)
+			log.Debugf("received:{%s,%s,%+v}", r.subject, r.replySubject, string(r.data))
 
 			//decode into a response
 			var response Response
@@ -81,11 +81,8 @@ func (clientConfig ClientConfig) Create() (ms.Client, error) {
 			}
 		},
 	); err != nil {
-		log.Debugf("1")
 		return nil, errors.Wrapf(err, "failed to subscriber to client replySubject")
 	}
-	log.Debugf("1")
-
 	//todo: cleanup above when stopping
 	return newClient, nil
 } //ClientConfig.Create()
@@ -114,29 +111,20 @@ func (c *client) Sync(
 		contextID = requestID
 	}
 
-	log.Debugf("1")
-
 	//make and register the chan on request id with the client before sending
 	//to ensure it exists when response is received
 	replyChan := make(chan Response)
-	log.Debugf("1")
 	c.pendingMutex.Lock()
-	log.Debugf("1")
 	c.pendingReplyChanByRequestID[requestID] = replyChan
-	log.Debugf("1")
 	c.pendingMutex.Unlock()
-	log.Debugf("1")
 
 	request := Request{
 		Header: Header{
 			Timestamp: time.Now(),
 			ContextID: contextID,
 			RequestID: requestID,
-			//client domain will be used by server for reply path, and must be unique
-			//in case other clients are used at the same time! And the client must be
-			//subscribed to this topic
-			Client:  &ms.Address{Domain: c.config.Domain + "." + contextID, Operation: "todo"},
-			Service: &serviceAddress,
+			Client:    &ms.Address{Domain: c.config.Domain, Operation: "todo"},
+			Service:   &serviceAddress,
 		},
 		//Auth: ...? todo
 		TTL:  datatype.Duration(ttl),
@@ -144,9 +132,7 @@ func (c *client) Sync(
 	}
 
 	//now send
-	log.Debugf("1")
 	if err := c.conn.sendRequest(request); err != nil {
-		log.Debugf("1")
 		return nil, errors.Wrapf(err, "failed to send request")
 	}
 	log.Debugf("Sent sync request to %+v, waiting %v for response", serviceAddress, ttl)
@@ -155,7 +141,10 @@ func (c *client) Sync(
 	select {
 	case response := <-replyChan:
 		log.Debugf("Got reply: %+v", response)
-		return response.Data, nil
+		if len(response.Errors) > 0 {
+			return nil, ms.NewError(response.Errors...) //failed
+		}
+		return response.Data, nil //success
 	case <-time.After(ttl):
 	}
 	log.Errorf("response timeout")
@@ -163,11 +152,9 @@ func (c *client) Sync(
 } //Sync()
 
 func (c *client) ASync(addr ms.Address, req interface{}) (err error) {
-	log.Debugf("1")
 	return errors.Errorf("NYI")
 }
 
 func (c *client) Send(addr ms.Address, ttl time.Duration, req interface{}) (err error) {
-	log.Debugf("1")
 	return errors.Errorf("NYI")
 }
