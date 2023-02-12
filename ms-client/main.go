@@ -14,9 +14,10 @@ import (
 	"github.com/go-msvc/utils/ms"
 )
 
-var log = logger.New().WithLevel(logger.LevelDebug)
+var log = logger.New()
 
 func main() {
+	debugMode := flag.Bool("d", false, "Debug mode")
 	clientDomain := flag.String("client", "ms-client", "Client domain name")
 	serviceDomain := flag.String("D", "", "Service domain name")
 	serviceOper := flag.String("O", "", "Service operation name")
@@ -24,6 +25,10 @@ func main() {
 	serviceReqJSON := flag.String("R", "{}", "Service request data on command line")
 	serviceReqFile := flag.String("F", "", "Service request file to load")
 	flag.Parse()
+
+	if *debugMode {
+		log = log.WithLevel(logger.LevelDebug)
+	}
 
 	if len(*serviceDomain) == 0 {
 		panic("option for service domain -D ... is required")
@@ -86,4 +91,10 @@ func main() {
 		panic(fmt.Sprintf("failed to do request: %+v", err))
 	}
 	log.Debugf("Got res (%T)%+v", res, res)
+
+	//write response as indented JSON to stdout
+	encoder := json.NewEncoder(os.Stdout)
+	encoder.SetIndent("", "\t")
+	encoder.Encode(res)
+	fmt.Printf("\n")
 } //main()

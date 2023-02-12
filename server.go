@@ -139,6 +139,7 @@ func (s *server) handleRequest(msg received) {
 					response.Data = responseData
 				}
 
+				log.Debugf("reply to %s: %+v", replySubject, response)
 				jsonRes, _ := json.Marshal(response)
 				log.Debugf("reply to %s: %s", replySubject, string(jsonRes))
 				if err := s.conn.send(nil, replySubject, jsonRes); err != nil {
@@ -175,7 +176,8 @@ func (s *server) handleRequest(msg received) {
 			return
 		}
 		reqValuePtr = reflect.New(o.ReqType())
-		jsonRequest, err := json.Marshal(request.Data)
+		var jsonRequest []byte
+		jsonRequest, err = json.Marshal(request.Data)
 		if err != nil {
 			err = errors.Wrapf(err, "failed to marshal request to JSON so that it can be unmarshalled into %v", o.ReqType())
 		}
@@ -209,8 +211,10 @@ func (s *server) handleRequest(msg received) {
 	//call the operation handler function
 	responseData, err = o.Handle(ctx, reqValuePtr.Elem().Interface())
 	if err != nil {
+		log.Debugf("Handler -> error: %+v", err)
 		err = errors.Wrapf(err, "oper(%s) handler failed", o.Name())
 	}
+	log.Debugf("Handler -> res: (%T)%+v", responseData, responseData)
 } //handler.HandleRequest()
 
 // handleReply() handles reply messages from nats after we sent with conn.Request()
