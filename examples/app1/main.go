@@ -46,10 +46,10 @@ func oper1(ctx context.Context, req Oper1Request) (*Oper1Response, error) {
 	}, nil
 }
 
-//=====[ oper2 ]========================================
+// =====[ oper2 ]========================================
 // this operation calls app2.oper2 and then mangle the
 // response so you can see it came from app1
-//======================================================
+// ======================================================
 type Oper2Request struct {
 	Name string `json:"name"`
 }

@@ -11,7 +11,7 @@ import (
 	"github.com/nats-io/nats.go"
 )
 
-var log = logger.New().WithLevel(logger.LevelDebug)
+var log = logger.New() //.WithLevel(logger.LevelDebug)
 
 func init() {
 	config.RegisterConstructor("nats", ServerConfig{
