@@ -1,0 +1,379 @@
+package datatype
+
+import (
+	"database/sql/driver"
+	"encoding/xml"
+	"time"
+
+	"github.com/jansemmelink/utils2/errors"
+) // import
+
+// CommonDateTime time in format "2006-01-02 15:04:05"
+type CommonDateTime struct {
+	time.Time
+} // CommonDateTime
+
+// CommonDate time in format "2006-01-02"
+type CommonDate struct {
+	time.Time
+} // CommonDate
+
+// StartOfDayDateTime time in format "2006-01-02" + "00:00:00"
+type StartOfDayDateTime struct {
+	time.Time
+} // StartOfDayDateTime
+
+// EndOfDayDateTime time in format "2006-01-02" + "23:59:59"
+type EndOfDayDateTime struct {
+	time.Time
+} // EndOfDayDateTime
+
+const (
+	CommonDateTimeFormat = "2006-01-02 15:04:05"
+	CommonDateFormat     = "2006-01-02"
+) // const
+
+type Duration time.Duration
+
+// *****************************************************************************
+// Common Date Time
+// *****************************************************************************
+
+func NewCommonDateTimeFromTime(time time.Time) CommonDateTime {
+
+	return CommonDateTime{
+		Time: time,
+	} // CommonDateTime
+
+} // NewCommonDateTimeFromTime()
+
+func NewCommonDateTimeFromString(time string) (CommonDateTime, error) {
+
+	var commonDateTime CommonDateTime
+
+	if err := scan(&commonDateTime.Time, CommonDateTimeFormat, time); err != nil {
+
+		return CommonDateTime{}, errors.Wrapf(err,
+			"Failed to parse time %s", time)
+
+	} // if failed to parse
+
+	return commonDateTime, nil
+
+} // NewCommonDateTimeFromString()
+
+func CommonDateTimeNow() CommonDateTime {
+
+	return CommonDateTime{
+		Time: time.Now(),
+	} // CommonDateTime
+
+} // CommonDateTimeNow
+
+func (commonDateTime CommonDateTime) Add(d time.Duration) CommonDateTime {
+
+	return NewCommonDateTimeFromTime(commonDateTime.Time.Add(d))
+
+} // CommonDateTime.Add()
+
+func (commonDateTime CommonDateTime) String() string {
+
+	return commonDateTime.Format(CommonDateTimeFormat)
+
+} // CommonDateTime.String()
+
+func (commonDateTime CommonDateTime) Value() (driver.Value, error) {
+	return commonDateTime.String(), nil
+} // CommonDateTime.Value()
+
+func (commonDateTime *CommonDateTime) Scan(value interface{}) error {
+
+	return scan(
+		&commonDateTime.Time,
+		CommonDateTimeFormat,
+		value)
+
+} // CommonDateTime.Scan ()
+
+func (commonDateTime *CommonDateTime) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+
+	return unmarshalXMLTime(
+		&commonDateTime.Time,
+		CommonDateTimeFormat,
+		"",
+		d,
+		start)
+
+} // CommonDateTime.UnmarshalXML()
+
+// Embedding a time.Time has the downside of also promoting the MarshalJSON
+// method, which the encoding/json marshaling code prioritizes higher than the
+// MarshalText method for backwards compatibility reasons (MarshalText was
+// added in Go 1.2, MarshalJSON predates that). As a result the default
+// time.Time format is used instead of a custom format provided by MarshalText.
+//
+// https://stackoverflow.com/questions/20475321/override-the-layout-used-by-json-marshal-to-format-time-time
+
+//func (commonDateTime *CommonDateTime) UnmarshalText(b []byte) error {
+//
+//	switch string(b) {
+//	case "null", "0000-00-00 00:00:00", "00:00:00":
+//		return nil
+//	} // switch
+//
+//	var err error
+//
+//	commonDateTime.Time, err = time.ParseInLocation(
+//		CommonDateTimeFormat,
+//		string(b),
+//		time.Local)
+//
+//	return err
+//
+//} // CommonDateTime.UnmarshalText()
+//
+//func (commonDateTime CommonDateTime) MarshalText() ([]byte, error) {
+//
+//	return []byte(commonDateTime.Format(CommonDateTimeFormat)), nil
+//
+//} // CommonDateTime.MarshalText()
+
+func (commonDateTime *CommonDateTime) UnmarshalJSON(b []byte) error {
+
+	switch string(b) {
+	case "null", "\"0000-00-00 00:00:00\"", "\"00:00:00\"":
+		return nil
+	} // switch
+
+	var err error
+	commonDateTime.Time, err = time.ParseInLocation(`"`+CommonDateTimeFormat+`"`, string(b), time.Local)
+	return err
+
+} // CommonDateTime.UnmarshalJSON()
+
+func (commonDateTime CommonDateTime) MarshalJSON() ([]byte, error) {
+
+	b := make([]byte, 0, len(CommonDateTimeFormat)+2)
+	b = append(b, '"')
+	b = commonDateTime.AppendFormat(b, CommonDateTimeFormat)
+	b = append(b, '"')
+	return b, nil
+
+} // CommonDateTime.MarshalJSON()
+
+// *****************************************************************************
+// Common Date
+// *****************************************************************************
+
+func (commonDate CommonDate) String() string {
+
+	return commonDate.Format(CommonDateFormat)
+
+} // CommonDate.String()
+
+func (commonDate CommonDate) Value() (driver.Value, error) {
+	return commonDate.String(), nil
+} // CommonDate.Value()
+
+func (commonDate *CommonDate) Scan(value interface{}) error {
+
+	return scan(
+		&commonDate.Time,
+		CommonDateFormat,
+		value)
+
+} // CommonDate.Scan ()
+
+func (commonDate *CommonDate) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+
+	return unmarshalXMLTime(
+		&commonDate.Time,
+		CommonDateFormat,
+		"",
+		d,
+		start)
+
+} // CommonDate.UnmarshalXML()
+
+func (commonDate *CommonDate) UnmarshalJSON(b []byte) error {
+
+	if string(b) == "null" {
+		return nil
+	}
+
+	var err error
+	commonDate.Time, err = time.ParseInLocation(`"`+CommonDateFormat+`"`, string(b), time.Local)
+	return err
+
+} // CommonDate.UnmarshalJSON()
+
+func (commonDate CommonDate) MarshalJSON() ([]byte, error) {
+
+	b := make([]byte, 0, len(CommonDateFormat)+2)
+	b = append(b, '"')
+	b = commonDate.AppendFormat(b, CommonDateFormat)
+	b = append(b, '"')
+	return b, nil
+
+} // CommonDate.MarshalJSON()
+
+// *****************************************************************************
+// Start Of Day Time
+// *****************************************************************************
+
+func (startOfDayDateTime *StartOfDayDateTime) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+
+	return unmarshalXMLTime(
+		&startOfDayDateTime.Time,
+		CommonDateTimeFormat,
+		" 00:00:00",
+		d,
+		start)
+
+} // StartOfDayDateTime.UnmarshalXML()
+
+// *****************************************************************************
+// End Of Day Time
+// *****************************************************************************
+
+func (endOfDayDateTime *EndOfDayDateTime) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+
+	return unmarshalXMLTime(
+		&endOfDayDateTime.Time,
+		CommonDateTimeFormat,
+		" 23:59:59",
+		d,
+		start)
+
+} // EndOfDayDateTime.UnmarshalXML()
+
+// *****************************************************************************
+// Duration
+// *****************************************************************************
+
+func (d Duration) Milliseconds() int64 {
+	return int64(d.Duration().Seconds()) * 1000
+} // Duration.Milliseconds()
+
+func (d Duration) String() string {
+	return d.Duration().String()
+} // Duration.String()
+
+func (d Duration) Value() (driver.Value, error) {
+	return d.String(), nil
+} // Duration.Value()
+
+func (d *Duration) Scan(value interface{}) error {
+
+	if value == nil {
+		*d = Duration(0)
+		return nil
+	} // if value nil
+
+	var byteValue []byte
+
+	switch v := value.(type) {
+	case []byte:
+		byteValue = v
+	case string:
+		byteValue = []byte(v)
+	default:
+		return errors.Errorf("Duration cannot be initialised from %T %v",
+			v, v)
+	} // switch
+
+	if err := d.UnmarshalText(byteValue); err != nil {
+		return errors.Wrapf(err,
+			"Failed to unmarshal %s", byteValue)
+	} // if failed to unmarshal
+
+	return nil
+
+} // Duration.Scan ()
+
+func (d Duration) MarshalText() ([]byte, error) {
+	return []byte(d.String()), nil
+} // Duration.MarshalJSON()
+
+func (d *Duration) UnmarshalText(b []byte) error {
+
+	if dur, err := time.ParseDuration(string(b)); err != nil {
+		return errors.Wrapf(err,
+			"Failed to parse duration [%s]",
+			b)
+	} else {
+		*d = Duration(dur)
+		return nil
+	}
+
+} // Duration.UnmarshalText()
+
+func (d Duration) Duration() time.Duration {
+
+	return time.Duration(d)
+
+} // Duration.Duration()
+
+// *****************************************************************************
+// Helper Functions
+// *****************************************************************************
+
+func scan(timeOut *time.Time, format string, value interface{}) error {
+
+	if value == nil {
+		*timeOut = time.Time{}
+		return nil
+	} // if value nil
+
+	var stringValue string
+	var err error
+
+	switch v := value.(type) {
+	case []byte:
+		stringValue = string(v)
+	case string:
+		stringValue = v
+	default:
+		return errors.Errorf("Date Time cannot be initialised from %T %v",
+			v, v)
+	} // switch
+
+	if stringValue == "0000-00-00 00:00:00" {
+		*timeOut = time.Time{}
+		return nil
+	} // if zero
+
+	if *timeOut, err = time.ParseInLocation(format, stringValue, time.Local); err != nil {
+		return errors.Wrapf(err,
+			"Failed to parse time [%s]",
+			stringValue)
+	} // if failed to parse
+
+	return nil
+
+} // scan()
+
+// Unmarshal the time into the custom time struct
+func unmarshalXMLTime(inTime *time.Time, format string, suffix string, d *xml.Decoder, start xml.StartElement) error {
+
+	var timeStr string
+
+	if err := d.DecodeElement(&timeStr, &start); err != nil {
+		return errors.Wrapf(err,
+			"failed to decode element")
+	} // if failed to decode
+
+	timeStr = timeStr + suffix
+
+	if parsedTime, err := time.ParseInLocation(format, timeStr, time.Local); err != nil {
+		return errors.Wrapf(err,
+			"failed to parse time [%s]",
+			timeStr)
+		// if failed to parse
+	} else {
+		*inTime = parsedTime
+	} // if parsed
+
+	return nil
+
+} // unmarshalXMLTime()
